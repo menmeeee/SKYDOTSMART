@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SkyDot Lite</title>
+    <style>
+        /* 全体の初期化：480x800の極小画面に最適化 */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-size: 13px; font-family: sans-serif; }
+        body { background: #f0f0f0; color: #000; padding: 4px; }
+        
+        /* ヘッダー */
+        .hdr { background: #0055ff; color: #fff; padding: 6px; text-align: center; font-weight: bold; }
+        .sub-hdr { background: #333; color: #fff; padding: 5px; font-size: 11px; text-align: center; word-break: break-all; }
+        
+        /* 文字だけのタブメニュー */
+        .tabs { display: flex; background: #ddd; margin: 4px 0; border: 1px solid #aaa; }
+        .tab-btn { flex: 1; padding: 8px 2px; text-align: center; background: #eee; cursor: pointer; border-right: 1px solid #aaa; color: #000; text-decoration: none; }
+        .tab-btn:last-child { border-right: none; }
+        .tab-btn.active { background: #fff; font-weight: bold; border-bottom: 2px solid #0055ff; }
+
+        /* 各ページ（初期状態は非表示） */
+        .pg { display: none; background: #fff; border: 1px solid #aaa; padding: 6px; min-height: 260px; }
+        .pg.active { display: block; }
+
+        /* 一覧の行表示 */
+        .row { padding: 8px 4px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .row-btn { background: #eee; padding: 4px 6px; border: 1px solid #999; text-decoration: none; color: #000; font-size: 11px; }
+
+        /* チャット画面 */
+        .chat-box { height: 180px; overflow-y: auto; border: 1px solid #ccc; padding: 4px; background: #fafafa; margin-bottom: 6px; }
+        .m { margin-bottom: 6px; padding: 4px 6px; border-radius: 4px; max-width: 85%; word-break: break-all; line-height: 1.3; }
+        .m.s { background: #cce0ff; margin-left: auto; text-align: left; }
+        .m.r { background: #eee; margin-right: auto; }
+        .input-line { display: flex; gap: 4px; }
+        .input-line input[type="text"] { flex: 1; padding: 4px; border: 1px solid #999; }
+
+        /* ボタン・フォーム要素 */
+        .btn { padding: 4px 8px; background: #eee; border: 1px solid #999; cursor: pointer; color: #000; text-align: center; }
+        .btn-p { background: #0055ff; color: #fff; border-color: #0044cc; }
+        .btn-d { background: #ff3333; color: #fff; border-color: #cc0000; }
+        .btn-g { background: #00aa00; color: #fff; border-color: #008800; }
+        .form-g { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #ccc; }
+        .form-g label { display: block; font-weight: bold; margin-bottom: 2px; font-size: 11px; }
+        input[type="text"] { width: 100%; padding: 4px; border: 1px solid #999; }
+
+        /* 【重要】ポップアップが下部に並ぶバグを修正：最初から完全に非表示にする */
+        .ovr { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; padding: 20px 10px; }
+        .dlg { background: #fff; border: 2px solid #000; padding: 12px; text-align: center; }
+
+        /* QR用のカメラ映像 */
+        #preview { window: 100%; max-width: 240px; background: #000; margin: 5px auto; display: block; }
+        #qr-canvas { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="hdr">SkyDot Lite</div>
+<div class="sub-hdr" id="myIdDisplay" onclick="copyId()">ID: 接続中...</div>
+
+<div class="tabs">
+    <div class="tab-btn active" id="t-friends" onclick="st('friends')">フレンド</div>
+    <div class="tab-btn" id="t-rooms" onclick="st('rooms')">履歴</div>
+    <div class="tab-btn" id="t-qr" onclick="st('qr')">QR登録</div>
+    <div class="tab-btn" id="t-settings" onclick="st('settings')">設定</div>
+</div>
+
+<div id="p-friends" class="pg active">
+    <div style="background:#eee; padding:4px; margin-bottom:6px;">
+        <input type="text" id="addId" placeholder="友達のIDを入力" style="width:68%; display:inline-block;">
+        <button class="btn btn-p" onclick="addF()" style="width:28%;">追加</button>
+    </div>
+    <div id="list-friends"></div>
+</div>
+
+<div id="p-rooms" class="pg">
+    <div id="list-rooms"></div>
+</div>
+
+<div id="p-qr" class="pg">
+    <div style="text-align:center; margin-bottom:10px;">
+        <p style="font-weight:bold; font-size:11px;">▼ あなたのQRコード</p>
+        <div id="qrcode-area" style="margin:5px auto; display:inline-block; padding:5px; background:#fff;">
+            </div>
+    </div>
+    <div style="border-top:1px dashed #ccc; padding-top:8px; text-align:center;">
+        <p style="font-weight:bold; font-size:11px; margin-bottom:4px;">▼ 相手のQRコードを読み取る</p>
+        <button id="cam-btn" class="btn btn-g" onclick="toggleCam()" style="width:100%; padding:6px;">カメラを起動する</button>
+        <video id="preview" playsinline></video>
+        <canvas id="qr-canvas"></canvas>
+    </div>
+</div>
+
+<div id="p-settings" class="pg">
+    <div class="form-g">
+        <label>自分の名前</label>
+        <input type="text" id="cfgName" onchange="upName(this.value)">
+    </div>
+    <div class="form-g">
+        <label>ファイル送信</label>
+        <p style="font-size:11px; color:#666; margin-bottom:4px;">相手を選んで送信します：</p>
+        <input type="file" id="fileSelecter" style="display:none;" onchange="sendTabFile(this)">
+        <div id="list-files-friends"></div>
+    </div>
+    <div class="form-g" style="border:none;">
+        <button class="btn" onclick="expData()" style="width:100%;">トークデータの書き出し保存</button>
+    </div>
+</div>
+
+<div id="chat-view" style="display:none; background:#fff; border:1px solid #aaa; padding:6px; margin-top:4px;">
+    <div style="background:#eee; padding:4px; display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <button class="btn" onclick="backToMain()">←戻る</button>
+        <b id="chat-target-name">トーク</b>
+        <button class="btn btn-p" onclick="callStart()">📞通話</button>
+    </div>
+    <div class="chat-box" id="chatBox"></div>
+    <div class="input-line">
+        <input type="text" id="chatMsg" placeholder="文字を入力...">
+        <button class="btn btn-p" onclick="sendTxt()">送信</button>
+    </div>
+</div>
+
+<div id="ovr-call" class="ovr"><div class="dlg"><h3 id="call-status">通話中</h3><div id="call-timer" style="font-size:18px; font-weight:bold; margin:10px 0;">00:00</div><button class="btn btn-d" onclick="endCall()">切断</button></div></div>
+<div id="ovr-incoming" class="ovr"><div class="dlg"><h3>📞 着信中</h3><p id="inc-name" style="margin:10px 0; font-weight:bold;"></p><button class="btn btn-d" onclick="ansCall(false)" style="margin-right:10px;">拒否</button><button class="btn btn-g" onclick="ansCall(true)">出る</button></div></div>
+<div id="ovr-file" class="ovr"><div class="dlg"><h3>ファイル受信</h3><p id="file-info" style="margin:10px 0; word-break:break-all;"></p><a id="file-dl" class="btn btn-p" style="text-decoration:none; display:inline-block;" download>保存する</a> <button class="btn" onclick="closeOvr('ovr-file')">閉じる</button></div></div>
+
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+<script>
+    let friends = JSON.parse(localStorage.getItem('sd_l_friends') || '[]');
+    let chats = JSON.parse(localStorage.getItem('sd_l_chats') || '{}');
+    let myName = localStorage.getItem('sd_l_name') || "";
+    let fixedId = localStorage.getItem('sd_l_id') || "";
+    let curTarget = null, fileTarget = null, peer = null, myId = "";
+    let dConn = null, mCall = null, lStream = null, callTime = null, timerInt = null;
+    let videoStream = null, videoActive = false, scanInterval = null;
+
+    window.addEventListener('DOMContentLoaded', () => {
+        if (!myName) {
+            myName = prompt("あなたの名前を入力してください:") || "ゲスト";
+            localStorage.setItem('sd_l_name', myName);
+        }
+        document.getElementById('cfgName').value = myName;
+        initPeer();
+    });
+
+    function upName(v) { if(v.trim()) { myName = v.trim(); localStorage.setItem('sd_l_name', myName); } }
+
+    // ID発行とPeerJS通信の初期化（古い環境での切断・発行エラー対策版）
+    function initPeer() {
+        // クラシックブラウザでも確実に接続できるよう標準的なサーバー設定を明示
+        const opts = {
+            host: '0.peerjs.com',
+            port: 443,
+            secure: true,
+            config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }] }
+        };
+        peer = fixedId ? new Peer(fixedId, opts) : new Peer(opts);
+
+        peer.on('open', (id) => {
+            myId = id;
+            if(!fixedId) { localStorage.setItem('sd_l_id', id); fixedId = id; }
+            document.getElementById('myIdDisplay').innerText = `マイID: ${id} (タップでコピー)`;
+            makeMyQR(id);
+            refreshAll();
+        });
+        peer.on('error', (err) => {
+            // ID衝突やエラーが出た場合は新しく作り直して再試行
+            if(err.type === 'unavailable-id') {
+                localStorage.removeItem('sd_l_id'); fixedId = "";
+                setTimeout(initPeer, 1000);
+            }
+        });
+        peer.on('connection', (c) => { dConn = c; rxConn(c); });
+        peer.on('call', (c) => {
+            mCall = c;
+            const name = (c.metadata && c.metadata.name) ? c.metadata.name : "お相手";
+            autoAdd(c.peer, name);
+            document.getElementById('inc-name').innerText = name + " からの着信";
+            document.getElementById('ovr-incoming').style.display = 'block';
+        });
+    }
+
+    function copyId() { if(myId) { navigator.clipboard.writeText(myId); alert("IDをコピーしました"); } }
+
+    // タブ切り替え
+    function st(id) {
+        stopCam(); // タブを移動したらカメラは安全に停止
+        document.getElementById('chat-view').style.display = 'none';
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+        document.getElementById(`p-${id}`).classList.add('active');
+        document.getElementById(`t-${id}`).classList.add('active');
+        refreshAll();
+    }
+
+    function refreshAll() { rF(); rR(); rFl(); }
+
+    function addF() {
+        const id = document.getElementById('addId').value.trim();
+        if(!id || id === myId || friends.some(f=>f.id===id)) return;
+        const n = prompt("登録する名前を入力してください:");
+        if(!n) return;
+        friends.push({id, name: n});
+        localStorage.setItem('sd_l_friends', JSON.stringify(friends));
+        document.getElementById('addId').value = "";
+        refreshAll();
+        st('friends');
+    }
+
+    function rF() {
+        const div = document.getElementById('list-friends');
+        div.innerHTML = friends.length === 0 ? '<p style="color:#888;padding:8px;text-align:center;">フレンドはいません</p>' : '';
+        friends.forEach(f => {
+            div.innerHTML += `<div class="row"><div><b>${f.name}</b><br><span style="font-size:10px;color:#666;">${f.id}</span></div><div><a class="row-btn" onclick="openChat('${f.id}')">トーク</a> <a class="row-btn" onclick="delF('${f.id}')" style="color:red;">削除</a></div></div>`;
+        });
+    }
+
+    function delF(id) {
+        if(confirm("このフレンドを削除しますか？")) {
+            friends = friends.filter(f=>f.id!==id);
+            localStorage.setItem('sd_l_friends', JSON.stringify(friends));
+            refreshAll();
+        }
+    }
+
+    function rR() {
+        const div = document.getElementById('list-rooms');
+        div.innerHTML = '';
+        const keys = Object.keys(chats);
+        if(keys.length === 0) div.innerHTML = '<p style="color:#888;padding:8px;text-align:center;">履歴はありません</p>';
+        keys.forEach(id => {
+            const f = friends.find(x=>x.id===id) || {name:"過去の相手"};
+            const h = chats[id]; if(!h || h.length===0) return;
+            div.innerHTML += `<div class="row" onclick="openChat('${id}')"><div><b>${f.name}</b><br><span style="font-size:11px;color:#555;">${h[h.length-1].txt}</span></div></div>`;
+        });
+    }
+
+    function rFl() {
+        const div = document.getElementById('list-files-friends');
+        div.innerHTML = friends.length === 0 ? '<p style="color:#888;padding:4px;">送れる相手がいません</p>' : '';
+        friends.forEach(f => {
+            div.innerHTML += `<div class="row" style="padding:4px 0;"><span>${f.name}</span><button class="btn row-btn" onclick="trigFile('${f.id}')">ファイル選択</button></div>`;
+        });
+    }
+
+    function trigFile(id) { fileTarget = id; document.getElementById('fileSelecter').click(); }
+    
+    function sendTabFile(el) {
+        const f = el.files[0]; if(!f || !fileTarget) return;
+        const fr = new FileReader();
+        fr.onload = (e) => {
+            const chunk = { act: 'file', name: f.name, data: e.target.result, nameFrom: myName };
+            if(dConn && dConn.peer === fileTarget && dConn.open) {
+                dConn.send(chunk); alert("送信が完了しました");
+            } else {
+                dConn = peer.connect(fileTarget, {metadata:{name:myName}});
+                dConn.on('open', () => { dConn.send(chunk); alert("送信が完了しました"); });
+            }
+        };
+        fr.readAsDataURL(f); el.value = '';
+    }
+
+    function openChat(id) {
+        curTarget = id; autoAdd(id, "トーク相手");
+        const f = friends.find(x=>x.id===id);
+        document.getElementById('chat-target-name').innerText = f.name;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('chat-view').style.display = 'block';
+        rMsg();
+        if(!dConn || dConn.peer!==id || !dConn.open) {
+            dConn = peer.connect(id, {metadata:{name:myName}}); rxConn(dConn);
+        }
+    }
+
+    function backToMain() { document.getElementById('chat-view').style.display = 'none'; st('friends'); }
+
+    function rMsg() {
+        const box = document.getElementById('chatBox'); box.innerHTML = '';
+        const h = chats[curTarget] || [];
+        h.forEach(m => {
+            box.innerHTML += `<div class="m ${m.side==='me'?'s':'r'}">${m.txt}</div>`;
+        });
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function sendTxt() {
+        const inp = document.getElementById('chatMsg'); const txt = inp.value.trim();
+        if(!txt || !curTarget) return;
+        svMsg(curTarget, 'me', txt); rMsg(); inp.value = '';
+        if(dConn && dConn.open) { dConn.send({act:'msg', txt:txt, name:myName}); }
+    }
+
+    function svMsg(id, side, txt) {
+        if(!chats[id]) chats[id] = [];
+        chats[id].push({side, txt});
+        localStorage.setItem('sd_l_chats', JSON.stringify(chats));
+    }
+
+    function rxConn(c) {
+        c.on('data', (d) => {
+            autoAdd(c.peer, d.name || "お相手");
+            if(d.act==='msg') {
+                svMsg(c.peer, 'other', d.txt);
+                if(curTarget === c.peer && document.getElementById('chat-view').style.display==='block') rMsg();
+            }
+            if(d.act==='file') {
+                document.getElementById('file-info').innerText = `受信ファイル: ${d.name}`;
+                document.getElementById('file-dl').href = d.data;
+                document.getElementById('file-dl').download = d.name;
+                document.getElementById('ovr-file').style.display = 'block';
+            }
+            if(d.act==='rej') { termCall(); }
+        });
+    }
+
+    function autoAdd(id, n) {
+        if(!id) return;
+        if(!friends.some(f=>f.id===id)) { friends.push({id, name:n}); localStorage.setItem('sd_l_friends', JSON.stringify(friends)); refreshAll(); }
+    }
+
+    // 通話機能
+    async function callStart() {
+        document.getElementById('call-status').innerText = "発信中...";
+        document.getElementById('ovr-call').style.display = 'block';
+        try {
+            lStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+            mCall = peer.call(curTarget, lStream, {metadata:{name:myName}});
+            rxCall(mCall);
+        } catch(e) { alert("マイクが起動できません"); endCall(); }
+    }
+
+    function endCall() {
+        if(mCall) mCall.close();
+        if(dConn && dConn.open) dConn.send({act:'rej'});
+        termCall();
+    }
+
+    function ansCall(ans) {
+        document.getElementById('ovr-incoming').style.display = 'none';
+        if(ans && mCall) {
+            navigator.mediaDevices.getUserMedia({audio:true, video:false}).then(s => {
+                lStream = s; mCall.answer(s); rxCall(mCall);
+            }).catch(()=>{ alert("マイクエラー"); mCall.close(); termCall(); });
+        } else {
+            if(dConn && dConn.open) dConn.send({act:'rej'}); if(mCall) mCall.close(); termCall();
+        }
+    }
+
+    function rxCall(call) {
+        call.on('stream', (s) => {
+            document.getElementById('call-status').innerText = "通話中";
+            const aud = document.createElement('audio'); aud.srcObject = s; aud.autoplay = true; document.body.appendChild(aud);
+            callTime = Date.now(); clearInterval(timerInt);
+            timerInt = setInterval(() => {
+                const sec = Math.floor((Date.now()-callTime)/1000);
+                document.getElementById('call-timer').innerText = String(Math.floor(sec/60)).padStart(2,'0')+":"+String(sec%60).padStart(2,'0');
+            }, 1000);
+        });
+        call.on('close', () => termCall());
+    }
+
+    function termCall() {
+        clearInterval(timerInt); document.getElementById('ovr-call').style.display = 'none'; document.getElementById('ovr-incoming').style.display = 'none';
+        if(lStream) { lStream.getTracks().forEach(t=>t.stop()); lStream = null; }
+    }
+
+    function closeOvr(id) { document.getElementById(id).style.display = 'none'; }
+
+    // ==========================================
+    // 📷 QRコード機能（生成＆読取カメラ）
+    // ==========================================
+    function makeMyQR(text) {
+        try {
+            const qr = qrcode(0, 'M');
+            qr.addData(text); qr.make();
+            document.getElementById('qrcode-area').innerHTML = qr.createImgTag(4, 4);
+        } catch(e) { document.getElementById('qrcode-area').innerText = "QR作成失敗"; }
+    }
+
+    function toggleCam() {
+        if(videoActive) { stopCam(); } else { startCam(); }
+    }
+
+    function startCam() {
+        const video = document.getElementById('preview');
+        document.getElementById('cam-btn').innerText = "カメラを停止する";
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then((stream) => {
+            videoStream = stream; video.srcObject = stream; video.setAttribute("playsinline", true); video.play();
+            videoActive = true;
+            scanInterval = setInterval(scanQR, 300);
+        }).catch(() => { alert("カメラの起動に失敗しました"); stopCam(); });
+    }
+
+    function stopCam() {
+        document.getElementById('cam-btn').innerText = "カメラを起動する";
+        clearInterval(scanInterval);
+        if(videoStream) { videoStream.getTracks().forEach(track => track.stop()); videoStream = null; }
+        document.getElementById('preview').srcObject = null;
+        videoActive = false;
+    }
+
+    function scanQR() {
+        const video = document.getElementById('preview');
+        const canvas = document.getElementById('qr-canvas');
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            const ctx = canvas.getContext('2d');
+            canvas.height = video.videoHeight; canvas.width = video.videoWidth;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
+            if (code && code.data) {
+                stopCam();
+                document.getElementById('addId').value = code.data;
+                alert("QRコードからIDを読み取りました！");
+                addF();
+            }
+        }
+    }
+
+    function expData() {
+        const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({friends, chats}));
+        const a = document.createElement('a'); a.setAttribute("href", str); a.setAttribute("download", "skydot_lite_backup.json"); a.click();
+    }
+</script>
+</body>
+</html>
